@@ -6,6 +6,7 @@ use std::io::{Read, Write};
 use std::path::Path;
 use std::fs::File;
 
+// Main function, where the command line stuff occurs
 fn main() {
     // Grab command line args
     let args = env::args();

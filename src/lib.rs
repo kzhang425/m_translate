@@ -24,10 +24,10 @@ pub enum TokenType {
     LEFT_SQBR, // [
     RIGHT_SQBR, // ]
     COMMA, // ,
-    DOT,
+    DOT, // .
     SEMICOLON,
-    SLASH,
-    STAR,
+    SLASH, // the '/' character
+    STAR, // *
 
     // Single or double, special types
     BANG, // !
@@ -127,6 +127,10 @@ impl Token {
         } else {
             return format!("Token({}, {}, {}, {})", t.to_string(), self.lexeme, self.literal, self.line);
         } 
+    }
+
+    pub fn get_literal(&self) -> String {
+        self.literal.clone()
     }
 }
 
@@ -242,8 +246,10 @@ impl Scanner {
             '<' => self.add_token_conditional('=', TokenType::LESS_EQ, TokenType::LESS),
             '>' => self.add_token_conditional('=', TokenType::GREATER_EQ, TokenType::GREATER),
 
+
             // Characters that dont do anything or are simply delimiters
             ' ' | '\r' | '\t' => (),
+
 
             // Newline handled here. Increment by 1 and add its associated token
             '\n' => {
@@ -254,7 +260,56 @@ impl Scanner {
             }
 
 
+            // The slash character can be used in comments and division, so it should be handled with two cases
+            '/' => {
+                if self.conditional_advance('/') {
+                    // Then this is a comment and goes until the end of the line. Ignore this for compilation.
+                    while self.peek() != '\n' && !self.is_at_end() {
+                        self.advance();
+                    }
+                } else {
+                    // Otherwise, this is a token worth looking at
+                    self.add_token_no_literal(TokenType::SLASH);
+                }
+            }
 
+
+            // For string literals, things get a little more complicated
+            '"' => {
+                while self.peek() != '"' && !self.is_at_end() {
+                    // peeks through the duration of the string, 
+                    if self.peek() == '\n' {
+                        self.line += 1;
+                    }
+
+                    // lets probably implement the escape sequence of \" so that we can have quotes in strings
+                    if self.peek() == '\\' {
+                        // just simply skip the character and therefore don't apply special rules to the character after the backslash
+                        self.advance();
+                    }
+
+                    self.advance();
+                }
+
+                // If we don't see another quote for a while then maybe we have an unclosed quote
+                if self.is_at_end() {
+                    panic!("Unclosed quote for string literal.");
+                }
+
+                // Skip past the closing quote and now the current index is one after it
+                self.advance();
+
+                // Collect the characters between the two indexes we have: start and current
+                let start_no_quote = self.start + 1;
+                let current_no_quote = self.current - 1;
+                let resultant_string = String::from(&self.source[start_no_quote..current_no_quote]);
+
+                // Now this string still contains escape sequences but we'll keep them in as this is the literal string
+                // Make sure to process them during the codegen step by expanding the token and processing the literal
+                // contained within.
+                self.add_token(TokenType::STRING, resultant_string);
+                
+            }
 
 
             // Default case analogous to default: in a switch statement in other languages
@@ -315,10 +370,10 @@ impl Scanner {
         } else {
             self.source.chars().nth(self.current).unwrap()
         }
-
     }
 
     // If we have a unit like "!=", make sure to fully capture this as its own token rather than two separate things
+    // Also, the online tutorial calls this function "match" but match is a keyword here in Rust.
     #[inline]
     fn conditional_advance(&mut self, expected: char) -> bool {
         if self.is_at_end() {
@@ -345,9 +400,16 @@ fn empty_string() -> String {
     String::from("")
 }
 
+/// Takes a usize describing what line to designate the end of file at.
 #[inline]
 fn eof_token(lin: usize) -> Token {
     Token::new(TokenType::EOF, empty_string(), empty_string(), lin)
+}
+
+// To easily make scanners for testing, here are some more functions to create things
+// These are just one-call functions that make a scanner with a predetermined buffer
+fn helloworld_scanner() -> Scanner {
+    Scanner::from_string("Hello World".to_string())
 }
 
 
@@ -404,6 +466,19 @@ mod tests {
             Token::new(TokenType::EOF, empty_string(), empty_string(), 1)];
 
         assert_eq!(scanner.into_tokens(), compare);
+    }
+
+    #[test]
+    fn string_parse() {
+        let s = String::from("\"This is a string\"");
+        let mut scanner = Scanner::from_string(s);
+
+        // Scan this to see if it will detect it as a string literal
+        scanner.scan_tokens();
+        let tokens = scanner.into_tokens();
+        let first = tokens[0].get_literal();
+
+        assert_eq!(first, "This is a string".to_string());
     }
 
 
